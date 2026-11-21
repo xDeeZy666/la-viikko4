@@ -1,0 +1,16 @@
+[Unit]
+Description=Viikko 4 read-only replica counter (Flask + Gunicorn)
+After=network.target mariadb.service
+Requires=mariadb.service
+
+[Service]
+User=ubuntu
+WorkingDirectory=/home/ubuntu/viikko4
+EnvironmentFile=/etc/viikko4.env
+ExecStart=/home/ubuntu/viikko4/.venv/bin/gunicorn --workers 2 --bind 127.0.0.1:8001 --access-logfile - --error-logfile - app:app
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+

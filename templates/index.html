@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>xDeeZy's Linux Server B Week 4</title>
+  <style>
+    body { max-width: 800px; margin: 40px auto; padding: 0 20px; font-family: sans-serif;
+           line-height: 1.6; background: #0d0d0d; color: #e6e6e6; }
+    h1, h2 { color: #e53935; }
+    h1 { border-bottom: 2px solid #e53935; }
+    a { color: #ff8a80; }
+    code { background: #1a1a1a; color: #ff8a80; }
+    .replica { display: inline-block; background: #e53935; color: #fff; font-weight: bold;
+               padding: 4px 12px; border-radius: 6px; }
+    .counter { font-size: 2em; color: #e53935; font-weight: bold; }
+  </style>
+</head>
+<body>
+  <h1>xDeeZy's Linux Server B Week 4</h1>
+  <p class="replica">READ-ONLY REPLICA</p>
+  <p>This page runs on server B and shows the visitor counter from B's local
+     replicated MariaDB database. Loading this page does not change the counter.</p>
+
+  <h2>Replicated visitor counter</h2>
+  <p>Server A's counter value (replicated to B): <span class="counter">{{ kaynnit }}</span></p>
+  <p>
+    <a href="http://195.148.23.171/viikko2/">Server A: /viikko2/ (increments the counter)</a><br>
+    <a href="http://195.148.20.47/viikko4/">Server B: /viikko4/ (this read-only page)</a>
+  </p>
+
+  <h2>Source code</h2>
+  <p><a href="https://github.com/xDeeZy666/la-viikko4">github.com/xDeeZy666/la-viikko4</a></p>
+
+  <!-- Documentation sections are added in step 6 -->
+</body>
+</html>
