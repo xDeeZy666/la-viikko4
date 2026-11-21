@@ -1,0 +1,2 @@
+# Hourly backup of server A's /var/www/html to server B (minute 0 of every hour)
+0 * * * * root /usr/local/bin/backup-www-from-a.sh
