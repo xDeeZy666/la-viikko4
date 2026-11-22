@@ -14,24 +14,106 @@
     .replica { display: inline-block; background: #e53935; color: #fff; font-weight: bold;
                padding: 4px 12px; border-radius: 6px; }
     .counter { font-size: 2em; color: #e53935; font-weight: bold; }
+    table { border-collapse: collapse; width: 100%; margin-bottom: 1em; }
+    th, td { border: 1px solid #333; padding: 6px 10px; text-align: left; vertical-align: top; }
+    th { color: #e53935; }
+    pre { background: #1a1a1a; color: #ff8a80; padding: 12px; overflow-x: auto; }
+    ul { list-style: none; padding-left: 0; }
+    li { margin-bottom: 0.6em; }
   </style>
 </head>
 <body>
   <h1>xDeeZy's Linux Server B Week 4</h1>
   <p class="replica">READ-ONLY REPLICA</p>
   <p>This page runs on server B and shows the visitor counter from B's local
-     replicated MariaDB database. Loading this page does not change the counter.</p>
+     replicated MariaDB database.</p>
 
   <h2>Replicated visitor counter</h2>
   <p>Server A's counter value (replicated to B): <span class="counter">{{ kaynnit }}</span></p>
   <p>
-    <a href="http://195.148.23.171/viikko2/">Server A: /viikko2/ (increments the counter)</a><br>
-    <a href="http://195.148.20.47/viikko4/">Server B: /viikko4/ (this read-only page)</a>
+    <a href="http://195.148.23.171/viikko2/">Server A: /viikko2/ </a><br>
+    <a href="http://195.148.20.47/viikko4/">Server B: /viikko4/ </a>
   </p>
 
   <h2>Source code</h2>
   <p><a href="https://github.com/xDeeZy666/la-viikko4">github.com/xDeeZy666/la-viikko4</a></p>
 
-  <!-- Documentation sections are added in step 6 -->
+    <h2>1. How server B was created</h2>
+  <p>Firstly I shut off A with sudo poweroff, took a snapshot in cPouta, started A again and launched B from the snapshot (flavor standard.medium, same key and security group), and gave B
+ its own floating IP 195.148.20.47.</p>
+
+  <h2>2. Storage layout and backup locations</h2>
+  <table>
+    <tr><th>Path</th><th>Server A (primary)</th><th>Server B (replica)</th></tr>
+    <tr><td><code>/</code> root disk</td><td>80 GB (standard.large)</td><td>80 GB (standard.medium)</td></tr>
+    <tr><td><code>/var/www/html</code></td><td>Live website files (Week 1, Week 3 report)</td><td>Copy from the snapshot</td></tr>
+    <tr><td><code>/home/ubuntu/viikko2</code></td><td>Week 2 app (increments the counter)</td><td>Disabled on B</td></tr>
+    <tr><td><code>/home/ubuntu/viikko4</code></td><td>–</td><td>Week 4 read-only app</td></tr>
+    <tr><td><code>/var/lib/mysql</code></td><td>MariaDB data + binary logs (<code>primary-bin.*</code>)</td><td>Replicated data + relay logs</td></tr>
+    <tr><td><code>/var/backups/www-from-a/</code></td><td>–</td><td>Hourly timestamped backups of A's <code>/var/www/html</code></td></tr>
+    <tr><td><code>/var/log/www-backup.log</code></td><td>–</td><td>Result (OK / FAILED) of every backup run</td></tr>
+  </table>
+
+  <h2>3. Users, ownership and permissions</h2>
+  <h3>Linux users and files</h3>
+  <table>
+    <tr><th>User / file</th><th>Owner and mode</th><th>Purpose</th></tr>
+    <tr><td><code>ubuntu</code></td><td>login user</td><td>Owns the app folders; systemd runs the Flask apps as this user, not as root</td></tr>
+    <tr><td><code>root</code></td><td>–</td><td>Runs the hourly backup on B</td></tr>
+    <tr><td><code>/usr/local/bin/backup-www-from-a.sh</code></td><td>root:root 755</td><td>Only root can modify the script that cron runs as root</td></tr>
+    <tr><td><code>/etc/cron.d/www-backup</code></td><td>root:root 644</td><td>Hourly schedule</td></tr>
+    <tr><td><code>/root/.ssh/sync_ed25519</code></td><td>root 600</td><td>Private SSH key for the backup connection to A</td></tr>
+    <tr><td><code>/var/backups/www-from-a</code></td><td>root:root 700</td><td>Backups readable only by root, not served by Nginx</td></tr>
+    <tr><td><code>/etc/viikko4.env</code></td><td>root:root 600</td><td>Database password for the Week 4 app</td></tr>
+  </table>
+  <h3>Database users</h3>
+  <table>
+    <tr><th>User</th><th>Rights</th><th>Used by</th></tr>
+    <tr><td><code>viikko2app@localhost</code></td><td>SELECT, UPDATE on <code>viikko2.laskuri</code></td><td>A's /viikko2/ app</td></tr>
+    <tr><td><code>viikko4app@localhost</code></td><td>SELECT only on <code>viikko2.laskuri</code></td><td>B's /viikko4/ app</td></tr>
+    <tr><td><code>replicator@192.168.1.95</code></td><td>REPLICATION SLAVE only</td><td>B's replication connection to A</td></tr>
+  </table>
+  <p>Port 3306 is open in the cPouta security group only from B's internal IP 192.168.1.95/32. A's MariaDB listens
+only on 127.0.0.1 and 192.168.1.222, not on the public IP. B only on 127.0.0.1, so the databases are not reachable from
+the internet. B's database is read-only, so ordinary users cannot change data. The backup SSH key is accepted on A
+ only from B's internal IP (from="192.168.1.95" in A's authorized_keys file). </p>
+
+  <h2>4. Hourly backups and continuous replication</h2>
+  <p><strong>Hourly backups:</strong> Cron runs the script as root at minute 0 of every hour. The script uses rsync
+over SSH to copy A's /var/www/html to a new timestamped folder in /var/backups/www-from-a/ on server B and
+writes OK or FAILED for every run to /var/log/www-backup.log. The newest 48 backups are kept. </p>
+  <p><strong>Replication:</strong> A is the primary, it writes every database change to its binary log. B connects
+to A as the user "replicator" and continuosly fetches and applies the changes to its own database, usually within
+seconds.</p>
+  <p><strong>Why replication does not replace backups:</strong> Replication copies every change to B within seconds,
+including mistakes. If a table is deleted or wrong data is written on A, the same happens on B. Backups are older
+ versions from different points in time, so it's possible to restore data as it was before the mistake</p>
+
+  <h2>5. Test results</h2>
+  <p>All times are server time (UTC).</p>
+  <ul>
+    <li><strong>Both pages accessible:</strong> A's /viikko2/ and B's /viikko4/ open from the public internet.</li>
+    <li><strong>Replication and read-only page:</strong> B's /viikko4/ showed 46 and stayed at 46 after several
+reloads. After reloading A's page three times, B showed 49.</li>
+    <li><strong>Replication status (on B):</strong></li>
+  </ul>
+  <pre>
+             Slave_IO_Running: Yes
+            Slave_SQL_Running: Yes
+        Seconds_Behind_Master: 0
+                Last_IO_Error:
+               Last_SQL_Error:
+  </pre>
+  <ul>
+    <li><strong>Automatic backups:</strong> after one manual test run at 09:14, cron created a new backup every hour
+ from 2026-11-21 10:00 to 2026-11-22 09:00 (24 automatic runs), all marked OK in /var/log/www-backup.log, for example the folders 2026-11-21_1000 and 2026-11-21_1100.</li>
+    <li><strong>Restore test:</strong> I restored index.html from the backup 2026-11-22_0900 to /tmp/restore-test/. Its sha256sum (ebadf1e5...53373f06) matched the original file on A, so the restored file is identical.</li>
+    <li><strong>Reboot test (B):</strong> B was rebooted with sudo reboot at 10:42 on 2026-11-21. Before the reboot B showed 50. After it, nginx, mariadb, viikko4 and cron were active and replication was healthy. B still showed 50, and after loading A's page once it showed 51. The next hourly backup at 11:00 also succeeded, so the backup schedule continued after the reboot.</li>
+  </ul>
+  
+  <h2>6. What I learned</h2>
+  <p>When B was cloned from A, it also ran the Week 2 app, which tries to increment the counter on every page load.
+On a read-only replica this would fail, and the replica should never be written to by an application anyway. I solved
+it by disabling the service on B with "sudo systemctl disable -- now viikko2", so only the viikko4 app runs there.</p>
 </body>
 </html>
